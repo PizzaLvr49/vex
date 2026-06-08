@@ -162,3 +162,9 @@ describe :: fn(shape: Shape) -> void {
         .Point      => std.log.info("point"),
     }
 }
+
+UserId :: Struct(id: u64) {
+    pub fn is_valid(*self) -> bool {
+        return self.*.id > 0;
+    }
+}
