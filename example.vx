@@ -4,7 +4,7 @@ SoaErr :: pub error {
     OutOfSpace,
 }
 
-Soa :: pub fn(T: type, capacity: usize): type {
+Soa :: pub fn(const T: type, const capacity: usize) -> type {
     return struct {
         macro for (T.fields) |field| {
             $(field.name + "_arr"): [capacity] $(field.type),
@@ -12,22 +12,22 @@ Soa :: pub fn(T: type, capacity: usize): type {
 
         count: usize = 0,
 
-        push :: fn(*self, item: T): SoaErr!void {
-            if (self.count >= capacity) return SoaErr.OutOfSpace;
+        push :: fn(*self, item: T) -> SoaErr!void {
+            if (self.*.count >= capacity) return SoaErr.OutOfSpace;
 
             macro for (T.fields) |field| {
-                self.$(field.name + "_arr")[self.count] = item.$(field.name);
+                self.*.$(field.name + "_arr")[self.*.count] = item.$(field.name);
             }
 
-            self.count += 1;
+            self.*.count += 1;
         }
 
-        get :: fn(*self, index: usize): ?T {
-            if (index >= self.count) return null;
+        get :: fn(*self, index: usize) -> ?T {
+            if (index >= self.*.count) return null;
 
             return T {
                 macro for (T.fields) |field| {
-                    .$(field.name) = self.$(field.name + "_arr")[index],
+                    .$(field.name) = self.*.$(field.name + "_arr")[index],
                 }
             };
         }
@@ -46,7 +46,7 @@ ArbitrarySoa :: Soa(struct {
     random: f64,
 }, 128);
 
-main :: fn(): !void {
+main :: fn() -> !void {
     pool: EnemySoa = .{};
 
     one := Enemy{ .id = 1, .hp = 100.0 };
@@ -60,75 +60,58 @@ DrawError :: error {
     Misc,
 }
 
-render :: fn(T: type, x: T): DrawError!void {
+render :: fn(const T: type, x: T) -> DrawError!void {
     return x:draw();
 }
 
-render_with_msg :: fn(T: type, x: T): DrawError!void {
+render_with_msg :: fn(const T: type, x: T) -> DrawError!void {
     macro if T.methods.contains("draw") else @panic
         T.name + " passed to render() but does not implement draw(): DrawError!void"
         + " - available methods: " + T.methods.join(", ");
     return x:draw();
 }
 
-reflection_example :: fn(T: type, obj: *T): void {
+reflection_example :: fn(const T: type, obj: *T) -> void {
     macro for (T.fields) |f| {
-        std.log.info("{}: {}", f.name, obj.$(f.name));
+        std.log.info("{}: {}", f.name, obj.*.$(f.name));
     }
 }
 
-// reflection_example(Example, &example) would unroll to:
-// {
-//     std.log.info("{}: {}", "x", obj.x);
-//     std.log.info("{}: {}", "y", obj.y);
-// }
+anydata :: struct {
+    data: *void,
+    type: *type,
+}
 
-// anydata :: struct {
-//     data: *void,
-//     type: *type,  // pointer to static type descriptor; pointer equality == type equality
-// }
+const type :: struct {
+    name:   string,
+    size:   usize,
+    fields: []field,
+}
 
-// type :: struct {
-//     name:   string,
-//     size:   usize,
-//     fields: []field,
-// }
+const field :: struct {
+    name:   string,
+    offset: usize,
+    type:   *type,
+}
 
-// field :: struct {
-//     name:   string,
-//     offset: usize,
-//     type:   *type,
-// }
+runtime_reflection_example :: fn(obj: *anydata) -> void {
+    base := obj.*.data as [*]u8;
 
-// pointer rules:
-//   ptr.*         - explicit deref, gives you the value
-//   ptr as *T     - reinterpret cast, no runtime cost
-//   base + offset - pointer arithmetic only valid on [*]T and adds sizeof(T) x offset
-// *T      single-item pointer   - deref with .*, no arithmetic
-// [*]T    many-item pointer     - arithmetic allowed, no bounds, no len
-// []T     slice                 - [*]T + len, bounds checked
-// [N]T    fixed array           - stack allocated, N comptime known
-
-runtime_reflection_example :: fn(obj: *anydata): void {
-    base := obj.data as [*]u8;
-
-    for (obj.type.fields) |f| {
+    for (obj.*.type.*.fields) |f| {
         ptr := base + f.offset;
-        data: u32 = (ptr as *u32).*;  // unsafe - valid only if f.type == u32.type
+        data: u32 = (ptr as *u32).*;
     }
 }
 
-// safe downcast - null if type doesn't match
-cast :: fn(T: type, obj: *anydata): ?*T {
-    if (obj.type != &T) return null;
-    return obj.data as *T;
+cast :: fn(const T: type, obj: *anydata) -> ?*T {
+    if (obj.*.type != T) return null;
+    return obj.*.data as *T;
 }
 
-// read a named field by runtime string, null if missing or wrong type
-get :: fn(T: type, obj: *anydata, field: string): ?T {
-    f := obj.type.fields:iter():first(|f| f.name == field) orelse return null; // this is slow rn hmm
-    if (f.type != &T) return null;
-    ptr := (obj.data as [*]u8 + f.offset) as *T;
+get :: fn(const T: type, obj: *anydata, field: string) -> ?T {
+    f := obj.*.type.*.fields:find(|f| f.name == field) orelse return null;
+    if (f.type != T) return null;
+    ptr := (obj.*.data as [*]u8 + f.offset) as *T;
     return ptr.*;
 }
 
@@ -138,25 +121,44 @@ Example :: struct {
 }
 
 MyUnion :: union {
-    shared_field: u32,
-    
     Type1 :: struct {
         field_one: u32,
-    }
-
+    },
     Type2 :: struct {
         another_field: f32,
-    }
+    },
 }
 
-MyTaggedUnion :: union(enum) {
-    shared_field: u32,
-    
-    Type1 :: struct {
-        field_one: u32,
-    }
+Shape :: enum {
+    Circle :: struct {
+        radius: f32,
+    },
+    Rect :: struct {
+        width:  f32,
+        height: f32,
+    },
+    Point,
+}
 
-    Type2 :: struct {
-        another_field: f32,
+Direction :: enum {
+    North,
+    South,
+    East,
+    West,
+}
+
+area :: fn(shape: Shape) -> f32 {
+    return match shape {
+        .Circle(c)  => std.math.PI * c.*.radius * c.*.radius,
+        .Rect(r)    => r.*.width * r.*.height,
+        .Point      => 0.0,
+    };
+}
+
+describe :: fn(shape: Shape) -> void {
+    match shape {
+        .Circle(c)  => std.log.info("circle r={}", c.*.radius),
+        .Rect(r)    => std.log.info("rect {}x{}", r.*.width, r.*.height),
+        .Point      => std.log.info("point"),
     }
 }
