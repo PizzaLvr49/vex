@@ -136,3 +136,14 @@ Example :: struct {
     x: f32,
     y: u32,
 }
+
+MyUnion :: union {
+    shared_field: u32,
+    tag: u8,
+    Type1 :: struct {
+        field_one: u32,
+    }
+    Type2 :: struct {
+        another_field: f32,
+    }
+}
