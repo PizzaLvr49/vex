@@ -6,7 +6,7 @@ SoaErr :: pub error {
 
 Soa :: pub fn(T: type, capacity: usize): type {
     return struct {
-        macro for (T.fields) |field| { // macro makes it so what you type ends up in the ast and you must inject values in $(...) unquotes
+        macro for (T.fields) |field| {
             $(field.name + "_arr"): [capacity] $(field.type),
         }
 
@@ -15,7 +15,7 @@ Soa :: pub fn(T: type, capacity: usize): type {
         push :: fn(*self, item: T): SoaErr!void {
             if (self.count >= capacity) return SoaErr.OutOfSpace;
 
-            macro for (T.fields) |field| { // macro for unrolls the loop at comptime
+            macro for (T.fields) |field| {
                 self.$(field.name + "_arr")[self.count] = item.$(field.name);
             }
 
@@ -23,9 +23,7 @@ Soa :: pub fn(T: type, capacity: usize): type {
         }
 
         get :: fn(*self, index: usize): ?T {
-            if (index >= self.count) {
-                return null;
-            }
+            if (index >= self.count) return null;
 
             return T {
                 macro for (T.fields) |field| {
@@ -54,7 +52,7 @@ main :: fn(): !void {
     one := Enemy{ .id = 1, .hp = 100.0 };
     two := Enemy{ .id = 2, .hp = 100.0 };
 
-    try pool:push(one); // I like : for method call syntax :)
+    try pool:push(one);
     pool:push(two) catch unreachable;
 }
 
@@ -62,21 +60,19 @@ DrawError :: error {
     Misc,
 }
 
-// example of a generic fn
-render :: fn(T: type, x: T): DrawError!void { // any type that has a draw returning DrawError!void works here
+render :: fn(T: type, x: T): DrawError!void {
     return x:draw();
 }
 
-// example of a generic fn but with a better error msg
 render_with_msg :: fn(T: type, x: T): DrawError!void {
     macro if T.methods.contains("draw") else @panic
         T.name + " passed to render() but does not implement draw(): DrawError!void"
-        + " — available methods: " + T.methods.join(", ");
+        + " - available methods: " + T.methods.join(", ");
     return x:draw();
 }
 
 reflection_example :: fn(T: type, obj: *T): void {
-    macro for (T.fields) |f| { // T.fields is const data about T allowing for reflection
+    macro for (T.fields) |f| {
         std.log.info("{}: {}", f.name, obj.$(f.name));
     }
 }
@@ -87,48 +83,54 @@ reflection_example :: fn(T: type, obj: *T): void {
 //     std.log.info("{}: {}", "y", obj.y);
 // }
 
-runtime_reflection_example :: fn(obj: *anydata) {
-    base := obj.*.data as *u8;
-
-    for (obj.*.type.*.fields) |f| {
-        ptr := base + f.offset;
-        data: u32 = cast(ptr); // bam you got data (will fail unless all passed fields are u32 though)
-    }
-}
-
-cast :: fn(T: type, obj: *anydata) -> ?*T {
-    if obj.type != T {
-        return null;
-    }
-    return obj.data as *T;
-}
-
-get :: fn(obj: *anydata, T: type, field: string): ?T {
-    fields := obj.*.type.*.fields;
-
-    f := try fields:iter():first(|f| f.name == field);
-
-    if (f.type != T) return null;
-
-    return (obj.*.data + f.offset).*;
-}
-
-// these commented definitions are prims just here as example
-
 // anydata :: struct {
 //     data: *void,
-//     type: *type, // *type acts as a typeid since type info is static and global
+//     type: *type,  // pointer to static type descriptor; pointer equality == type equality
 // }
 
 // type :: struct {
-//     fields: []field
+//     name:   string,
+//     size:   usize,
+//     fields: []field,
 // }
 
 // field :: struct {
-//     name: string
-//     offset: usize
-//     type: *type
+//     name:   string,
+//     offset: usize,
+//     type:   *type,
 // }
+
+// pointer rules:
+//   ptr.*         - explicit deref, gives you the value
+//   ptr as *T     - reinterpret cast, no runtime cost
+//   base + offset - pointer arithmetic only valid on [*]T and adds sizeof(T) x offset
+// *T      single-item pointer   - deref with .*, no arithmetic
+// [*]T    many-item pointer     - arithmetic allowed, no bounds, no len
+// []T     slice                 - [*]T + len, bounds checked
+// [N]T    fixed array           - stack allocated, N comptime known
+
+runtime_reflection_example :: fn(obj: *anydata): void {
+    base := obj.data as [*]u8;
+
+    for (obj.type.fields) |f| {
+        ptr := base + f.offset;
+        data: u32 = (ptr as *u32).*;  // unsafe - valid only if f.type == u32.type
+    }
+}
+
+// safe downcast - null if type doesn't match
+cast :: fn(T: type, obj: *anydata): ?*T {
+    if (obj.type != &T) return null;
+    return obj.data as *T;
+}
+
+// read a named field by runtime string, null if missing or wrong type
+get :: fn(T: type, obj: *anydata, field: string): ?T {
+    f := obj.type.fields:iter():first(|f| f.name == field) orelse return null; // this is slow rn hmm
+    if (f.type != &T) return null;
+    ptr := (obj.data as [*]u8 + f.offset) as *T;
+    return ptr.*;
+}
 
 Example :: struct {
     x: f32,
