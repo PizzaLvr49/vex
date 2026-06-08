@@ -103,14 +103,14 @@ cast :: fn(T: type, obj: *anydata) -> ?*T {
     return obj.data as *T;
 }
 
-get :: fn(*anydata, T: type, field: string): ?T {
-    fields := self.*.type.*.fields;
+get :: fn(obj: *anydata, T: type, field: string): ?T {
+    fields := obj.*.type.*.fields;
 
     f := try fields:iter():first(|f| f.name == field);
 
     if (f.type != T) return null;
 
-    return (self.*.data + f.offset).*;
+    return (obj.*.data + f.offset).*;
 }
 
 // these commented definitions are prims just here as example
