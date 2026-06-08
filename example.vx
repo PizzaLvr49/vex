@@ -117,7 +117,7 @@ get :: fn(obj: *anydata, T: type, field: string): ?T {
 
 // anydata :: struct {
 //     data: *void,
-//     type: *type,
+//     type: *type, // *type acts as a typeid since type info is static and global
 // }
 
 // type :: struct {
