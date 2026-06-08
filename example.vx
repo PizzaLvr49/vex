@@ -1,0 +1,126 @@
+@import std;
+
+SoaErr :: pub error {
+    OutOfSpace,
+}
+
+Soa :: pub fn(T: type, capacity: usize): type {
+    return struct {
+        macro for (T.fields) |field| { // macro makes it so what you type ends up in the ast and you must inject values in $(...) unquotes
+            $(field.name + "_arr"): [capacity] $(field.type),
+        }
+
+        count: usize = 0,
+
+        push :: fn(*self, item: T): SoaErr!void {
+            if (self.count >= capacity) return SoaErr.OutOfSpace;
+
+            macro for (T.fields) |field| { // macro for unrolls the loop at comptime
+                self.$(field.name + "_arr")[self.count] = item.$(field.name);
+            }
+
+            self.count += 1;
+        }
+
+        get :: fn(*self, index: usize): ?T {
+            if (index >= self.count) {
+                return null;
+            }
+
+            return T {
+                macro for (T.fields) |field| {
+                    .$(field.name) = self.$(field.name + "_arr")[index],
+                }
+            };
+        }
+    }
+}
+
+Enemy :: struct {
+    id: u32,
+    hp: f32,
+}
+
+EnemySoa :: Soa(Enemy, 128);
+
+ArbitrarySoa :: Soa(struct {
+    any: u32,
+    random: f64,
+}, 128);
+
+main :: fn(): !void {
+    pool: EnemySoa = .{};
+
+    one := Enemy{ .id = 1, .hp = 100.0 };
+    two := Enemy{ .id = 2, .hp = 100.0 };
+
+    try pool:push(one); // I like : for method call syntax :)
+    pool:push(two) catch unreachable;
+}
+
+DrawError :: error {
+    Misc,
+}
+
+// example of a generic fn
+render :: fn(T: type, x: T): DrawError!void { // any type that has a draw returning DrawError!void works here
+    return x:draw();
+}
+
+// example of a generic fn but with a better error msg
+render_with_msg :: fn(T: type, x: T): DrawError!void {
+    macro if T.methods.contains("draw") else @panic
+        T.name + " passed to render() but does not implement draw(): DrawError!void"
+        + " — available methods: " + T.methods.join(", ");
+    return x:draw();
+}
+
+reflection_example :: fn(T: type, obj: *T): void {
+    macro for (T.fields) |f| { // T.fields is const data about T allowing for reflection
+        std.log.info("{}: {}", f.name, obj.$(f.name));
+    }
+}
+
+// reflection_example(Example, &example) would unroll to:
+// {
+//     std.log.info("{}: {}", "x", obj.x);
+//     std.log.info("{}: {}", "y", obj.y);
+// }
+
+runtime_reflection_example :: fn(obj: *anydata) {
+    base := obj.*.data as *u8;
+
+    for (obj.*.type.*.fields) |f| {
+        ptr := base + f.offset;
+        data: u32 = cast(ptr); // bam you got data (will fail unless all passed fields are u32 though)
+    }
+}
+
+cast :: fn(T: type, obj: *anydata) -> ?*T {
+    if obj.type != T {
+        return null;
+    }
+    return obj.data as *T;
+}
+
+// these commented definitions are prims just here as example
+
+// anydata :: struct {
+//     data: *void,
+//     type: *type,
+// }
+
+// type :: struct {
+//     fields: []field
+// }
+
+// field :: struct {
+//     name: string
+//     offset: usize
+//     type: *type
+// }
+
+Example :: struct {
+    x: f32,
+    y: u32,
+}
