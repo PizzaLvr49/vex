@@ -1,0 +1,56 @@
+@import std;
+
+Gold :: struct(raw: u32) { // newtype and yes just putting the field as a sole field would be simpler but this allows pattern destructuring
+    pub fn is_valid(*self) -> bool {
+        return self.*.raw != 0;
+    }
+}
+
+Item :: enum {
+    Weapon :: struct { damage: f32 },
+    Potion :: struct { healing: f32 },
+    Junk :: struct, // zst pattern is Type :: struct;
+}
+
+InvError :: error { // error is the same as enum but has special semantics
+    Full,
+}
+
+Inventory :: struct {
+    items: [10]Item, // 10 items
+    count: usize = 0, // explicit default here
+
+    add :: pub fn(*self, item: Item) -> InvError!void {
+        if (self.*.count >= 10) return InvError.Full;
+        
+        self.*.items[self.*.count] = item; // yes all deref is explicit cry about it
+        self.*.count += 1;
+    }
+
+    get :: pub fn(*self, index: usize) -> ?Item {
+        if (index >= self.*.count) return null;
+        return self.*.items[index];
+    }
+}
+
+main :: fn() -> void {
+    let &inv: Inventory = .{}; // default / 0 init, & is used here because inv ops use a *Inventory so its easier to just grab pointer here instead of (&inv):add(...);
+    
+    let sword := Item.Weapon { .damage = 50.0 };
+    
+    inv:add(sword) catch |err| { // zig inspo :D, catch is when the failure does give a value
+        std.log.error("Failed to add: {}", err);
+        return;
+    };
+
+    let first_item := inv:get(0) orelse return; // orelse when the failure doesnt give you a value for handling
+
+    match first_item { // rust inspired match
+        .Weapon(w) => std.log.info("Weapon deals {} damage", w.*.damage),
+        .Potion(p) => std.log.info("Potion heals {} HP", p.*.healing),
+        .Junk => std.log.info("It's literally trash."),
+    }
+
+    let .Weapon(w) := inv:get(0) orelse return; // here is the pattern matching now with let :D
+    std.log.info("Confirmed slot 0 is a weapon. Damage: {}", w.*.damage);
+}
