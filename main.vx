@@ -157,4 +157,4 @@ arrayList :: fn(comptime T: type) -> type {
     }
 }
 
-IntList :: arrayList(i32); // bam you got a list of ints
+IntList :: arrayList(i32); // bam you got a list of ints, (important to know this isnt nominal, if you want nominal use a arrayList(NewType))
