@@ -145,3 +145,16 @@ anydata :: struct {
         return self.data as *T
     }
 }
+
+arrayList :: fn(comptime T: type) -> type {
+    return struct {
+        ptr: *T,
+        len: usize,
+        cap: usize,
+        allocator: *Allocator,
+
+        // methods would go here but this is an example not an impl
+    }
+}
+
+IntList :: arrayList(i32); // bam you got a list of ints
