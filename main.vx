@@ -38,7 +38,7 @@ main :: fn() -> void {
     
     let sword := Item.Weapon { .damage = 50.0 };
     
-    inv:add(sword) catch |err| { // zig inspo :D, catch is when the failure does give a value
+    inv:add(sword) catch |err| { // zig inspo :D, catch is when the failure does give a value,  // i personally like : for method call deal with it calling inv.add gives you a fn ptr
         std.log.error("Failed to add: {}", err);
         return;
     };
@@ -53,4 +53,88 @@ main :: fn() -> void {
 
     let .Weapon(w) := inv:get(0) orelse return; // here is the pattern matching now with let :D
     std.log.info("Confirmed slot 0 is a weapon. Damage: {}", w.*.damage);
+}
+
+
+// note this serialize fn is safe by just disallowing ptrs and slices from being serialized
+
+is_raw_serializable :: fn(T: *type) -> bool {
+    match T {
+        .r#struct(s) => {
+            return s.fields:iter():all(|f| { match f.type.* {
+                .primitive => true, // here break breaks out of the closure not the function
+                _ => false,
+            } });
+        },
+        .r#pointer, .r#slice => return false,
+        .primitive => return true,
+    }
+}
+
+comp_raw_serialize_checked :: fn(comptime T: type, obj: *T) -> [*]u8 {
+    comptime if !is_raw_serializable(&T) { @panic "only structs of prims for now" }
+
+    comptime let .r#struct(s) = T orelse unreachable; // assert this cant be
+
+    comptime let size := s.fields:iter():map(|f| {f.size}):sum(); // comptime means this is calculated by the compiler so its zero cost at runtime
+
+    let base_ptr := malloc(size) as [*]u8; // assume some magic global malloc (not a lang feature explicit allocators are coming but not this example)
+    let write_ptr := base_ptr;
+
+    inline for (s.fields) |f| { // just like zig, it unrolls the loop by copying its body multiple times only differing due to unquotes
+        let field_ptr := &obj.*.$(f.name); // here $(unquote) unquotes comtpime args into this code block
+
+        write_ptr.* = field_ptr.*; // copys the memory
+    
+        write_ptr += $(f.size); // bumps write pointer by compile time size
+    }
+
+    return base_ptr; // return the starting address of the freshly serialized data
+}
+
+dyn_raw_serialize :: fn(obj: anydata) -> ?[*]u8 { // prefer null or error here instead of panic since its at runtime
+    if !is_raw_serializable(obj.type) return null;
+
+    let size := obj.type.*.fields:iter():map(|f| {f.size}):sum(); no longer comptime
+
+    let base_ptr := malloc(size) as [*]u8;
+    let write_ptr := base_ptr;
+
+    let obj_bytes := obj.data as [*]u8 // treat source object data as a raw byte array
+
+    for (obj.type.*.fields) |f| { // normal loop
+        let i: usize = 0;
+        for (i < f.size) {
+            write_ptr[i] = obj_bytes[f.offset + i]; // copys the memory by reading at the offset
+            i += 1;
+        }
+
+        write_ptr += f.size; // bumps write pointers by runtime size tightly packing the data
+    }
+
+    return base_ptr; // return the starting address of the freshly serialized data
+}
+
+// these are compiler builtin type defs for the type system but shown here to understand the reflection
+
+type :: enum {
+    r#struct :: struct { // ill prob need like r# from rust or smth
+        fields: []field,
+    }
+    r#pointer :: struct, // empty for now
+    r#slice :: struct,
+    primitive :: struct,
+}
+
+field :: struct {
+    comptime name: string // string will most likely just be a super fat pointer (ptr len and capacity) but since its comptime the ptr is to static memory
+    size: usize,
+    offset: usize,
+    type: *type,
+}
+
+// anydata is a fat pointer containing *void and *type (types are all stored statically so its a usize static pointer, the pointer serves as a typeid)
+anydata :: struct {
+    type: *type,
+    data: *void,
 }
