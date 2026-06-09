@@ -34,7 +34,7 @@ Inventory :: struct {
 }
 
 main :: fn() -> void {
-    let &inv: Inventory = .{}; // default / 0 init, & is used here because inv ops use a *Inventory so its easier to just grab pointer here instead of (&inv):add(...);
+    let inv: *Inventory = &.{}; // default / 0 init, & is used here because inv ops use a *Inventory so its easier to just grab pointer here instead of (&inv):add(...);
     
     let sword := Item.Weapon { .damage = 50.0 };
     
@@ -59,11 +59,11 @@ main :: fn() -> void {
 // note this serialize fn is safe by just disallowing ptrs and slices from being serialized
 
 is_raw_serializable :: fn(T: *type) -> bool {
-    match T {
+    match T.* {
         .r#struct(s) => {
             return s.fields:iter():all(|f| { match f.type.* {
-                .primitive => true, // here break breaks out of the closure not the function
-                _ => false,
+                .primitive => break true, // break to break out of a closure (return always breaks top scope break always breaks current scope)
+                _ => break false,
             } });
         },
         .r#pointer, .r#slice => return false,
@@ -74,7 +74,7 @@ is_raw_serializable :: fn(T: *type) -> bool {
 comp_raw_serialize_checked :: fn(comptime T: type, obj: *T) -> [*]u8 {
     comptime if !is_raw_serializable(&T) { @panic "only structs of prims for now" }
 
-    comptime let .r#struct(s) = T orelse unreachable; // assert this cant be
+    comptime let .r#struct(s) := T orelse unreachable; // assert this cant be
 
     comptime let size := s.fields:iter():map(|f| {f.size}):sum(); // comptime means this is calculated by the compiler so its zero cost at runtime
 
@@ -95,7 +95,7 @@ comp_raw_serialize_checked :: fn(comptime T: type, obj: *T) -> [*]u8 {
 dyn_raw_serialize :: fn(obj: anydata) -> ?[*]u8 { // prefer null or error here instead of panic since its at runtime
     if !is_raw_serializable(obj.type) return null;
 
-    let size := obj.type.*.fields:iter():map(|f| {f.size}):sum(); no longer comptime
+    let size := obj.type.*.fields:iter():map(|f| {f.size}):sum(); // no longer comptime
 
     let base_ptr := malloc(size) as [*]u8;
     let write_ptr := base_ptr;
@@ -104,7 +104,7 @@ dyn_raw_serialize :: fn(obj: anydata) -> ?[*]u8 { // prefer null or error here i
 
     for (obj.type.*.fields) |f| { // normal loop
         let i: usize = 0;
-        for (i < f.size) {
+        while (i < f.size) {
             write_ptr[i] = obj_bytes[f.offset + i]; // copys the memory by reading at the offset
             i += 1;
         }
