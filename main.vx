@@ -9,7 +9,7 @@ Gold :: struct(raw: u32) { // newtype and yes just putting the field as a sole f
 Item :: enum {
     Weapon :: struct { damage: f32 },
     Potion :: struct { healing: f32 },
-    Junk :: struct, // zst pattern is Type :: struct;
+    Junk :: struct, // zst pattern is Type :: struct
 }
 
 InvError :: error { // error is the same as enum but has special semantics
@@ -76,7 +76,7 @@ comp_raw_serialize_checked :: fn(comptime T: type, obj: *T) -> [*]u8 {
 
     comptime let .r#struct(s) := T orelse unreachable; // assert this cant be
 
-    comptime let size := s.fields:iter():map(|f| {f.size}):sum(); // comptime means this is calculated by the compiler so its zero cost at runtime
+    comptime let size := s.fields:iter():map(|f| { break f.size }):sum(); // comptime means this is calculated by the compiler so its zero cost at runtime
 
     let base_ptr := malloc(size) as [*]u8; // assume some magic global malloc (not a lang feature explicit allocators are coming but not this example)
     let write_ptr := base_ptr;
@@ -95,7 +95,7 @@ comp_raw_serialize_checked :: fn(comptime T: type, obj: *T) -> [*]u8 {
 dyn_raw_serialize :: fn(obj: anydata) -> ?[*]u8 { // prefer null or error here instead of panic since its at runtime
     if !is_raw_serializable(obj.type) return null;
 
-    let size := obj.type.*.fields:iter():map(|f| {f.size}):sum(); // no longer comptime
+    let size := obj.type.*.fields:iter():map(|f| { break f.size }):sum(); // no longer comptime
 
     let base_ptr := malloc(size) as [*]u8;
     let write_ptr := base_ptr;
@@ -134,7 +134,14 @@ field :: struct {
 }
 
 // anydata is a fat pointer containing *void and *type (types are all stored statically so its a usize static pointer, the pointer serves as a typeid)
+// you can create it by casting *T as anydata
 anydata :: struct {
     type: *type,
     data: *void,
+
+    downcast :: pub fn(self, comptime T: type): ?*T { // here self is owned since its just copy data
+        if (self.type != &T) { return null }
+
+        return self.data as *T
+    }
 }
