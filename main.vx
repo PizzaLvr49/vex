@@ -62,7 +62,7 @@ is_raw_serializable :: fn(T: *type) -> bool {
     match T.* {
         .r#struct(s) => {
             return s.fields:iter():all(|f| { match f.type.* {
-                .primitive => break true, // break to break out of a closure (return always breaks top scope break always breaks current scope)
+                .primitive => break true, // break to break out of a closure (return always breaks top scope break always breaks current scope both can carry data even loop breaks)
                 _ => break false,
             } });
         },
@@ -100,7 +100,7 @@ dyn_raw_serialize :: fn(obj: anydata) -> ?[*]u8 { // prefer null or error here i
     let base_ptr := malloc(size) as [*]u8;
     let write_ptr := base_ptr;
 
-    let obj_bytes := obj.data as [*]u8 // treat source object data as a raw byte array
+    let obj_bytes := obj.data as [*]u8; // treat source object data as a raw byte array
 
     for (obj.type.*.fields) |f| { // normal loop
         let i: usize = 0;
